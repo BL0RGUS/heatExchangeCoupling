@@ -1,0 +1,139 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2506                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+a
+application    rhoPimpleFoam;
+
+startFrom       startTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         5;
+
+deltaT          0.05;
+
+writeControl    runTime;
+
+writeInterval   0.1;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable true;
+
+adjustTimeStep  yes;
+
+maxCo           1;
+
+maxAlphaCo      1;
+
+maxDeltaT       1;
+/*
+functions
+{
+    MUICoupling
+    {
+        libs ("libutilityFunctionObjects.so");
+        type coded;
+        name MUICoupling;
+        writeControl timeStep;
+
+	
+	codeInclude
+        #{
+            #include        "../../../MUI-2.0/include/mui.h"
+            #include        "../../system/muiconfig.h"
+        #};
+        
+    codeOptions
+        #{
+            -I/usr/lib/x86_64-linux-gnu/openmpi/include -w
+        #};
+    
+    codeLibs
+        #{
+            -L/usr/lib/x86_64-linux-gnu -lmpi -lmpi_cxx -w
+        #};
+        ///////////////////////////////////////////////////////////////////////////////
+        //////// declare the variable that will be used by the functions. It is called once at the start /////////////
+        
+        
+        codeData
+        #{
+            int iterCount = 1 ; 
+            std::vector<std::unique_ptr<mui::uniface<mui::mui_config>>> mui_ifs;
+            mui::point3d push_point;
+            mui::point3d fetch_point;
+            mui::sampler_exact<mui::mui_config> spatial_sampler;
+            mui::temporal_sampler_exact<mui::mui_config> temporal_sampler;
+        #};
+        
+        ///////////////////////////////////////////////////////////////////////////////
+        /// Every time step this part is called ////////////////
+        codeExecute
+        #{
+        Info << "OF says hello\n";
+        //Access temperature field 
+        // set up MUI interface
+	    if (iterCount == 1) 
+	    {
+	        std::vector<std::string> ifsName;
+	        ifsName.emplace_back("ifs");
+	        Info <<  "OF solver creating MUI interface " << endl;
+	        mui_ifs=mui::create_uniface<mui::mui_config>( "OpenFOAM", ifsName );	    
+	        Info <<  "OF solver Finsihed  MUI interface " << endl; 
+	    }	
+
+        //iterate over the boundary cells and access the Temperature
+        // wall-8 patch
+        const volScalarField& T = mesh().lookupObject<volScalarField>("T");
+        const label patch = mesh().boundaryMesh().findPatchID("wall-8");
+        forAll(T.boundaryField()[patch], faceI){
+            const point& cellCenter = mesh().Cf()[mesh().boundaryMesh()[patch].start()+faceI];
+            if(iterCount % 100 == 0){
+                Pout<< "OF Solver says FaceID IS " << mesh().boundaryMesh()[patch].start()+faceI << " Coordinates are "<< cellCenter << \
+                " Boundary Value Was " << T.boundaryField()[patch][faceI] <<"\n" <<endl;
+            }            
+            push_point[0] = cellCenter[0];push_point[1] = cellCenter[1];push_point[2] = cellCenter[2];
+            mui_ifs[0]->push( "dataFromOF", push_point, T.boundaryField()[patch][faceI]);
+        }
+        // commit the temperature values for this timestep, this is the cue for ping to fetch values.
+        mui_ifs[0]->commit( iterCount ); 
+        
+        if(iterCount > 0){
+            mui_ifs[0]->forget(iterCount-1);
+        }
+	    Info << "zzzzzzzzzzzzzz OpenFoam at time "<< iterCount << " sent " << endl;
+            Info<<"OpenFoam iterCount " << iterCount << endl;
+        iterCount = iterCount+1;
+
+        #};
+    }
+}
+*/
+
+// ************************************************************************* //

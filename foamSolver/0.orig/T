@@ -1,0 +1,99 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2506                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      T;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 0 0 1 0 0 0];
+
+internalField   uniform 273;
+
+boundaryField
+{
+/*
+   {
+        type           codedMixed;
+        refValue       uniform 273;
+        refGradient    uniform 0;
+        valueFraction  uniform 1;
+        name           tempChange;
+
+        codeInclude
+        #{
+                #include        "/home/blairmccormick/OpenFOAM/blairmccormick-v2506/run/Ticofoam/MUI-2.0/include/mui.h"
+                #include        "/home/blairmccormick/OpenFOAM/blairmccormick-v2506/run/Ticofoam/rhoPimpleFoam/system/muiconfig.h"  
+                std::vector<std::unique_ptr<mui::uniface<mui::mui_config>>> mui_ifs;
+                mui::point3d fetch_point;
+                mui::sampler_pseudo_nearest_neighbor<mui::mui_config> spatial_sampler(1e-3);
+                mui::temporal_sampler_exact<mui::mui_config> temporal_sampler;
+                int iterCount = -1;
+        #};
+            
+        codeOptions
+        #{
+                -I/usr/lib/x86_64-linux-gnu/openmpi/include -w -Wall
+        #};
+
+        codeLibs
+        #{
+            -L/usr/lib/x86_64-linux-gnu -lmpi -lmpi_cxx 
+        #};
+        code
+        #{  
+            Info << "xxxxxxCurrent iteration: " << iterCount << endl;
+            if(iterCount == -1)
+            {
+                std::vector<std::string> ifsName;
+                ifsName.emplace_back("ifs2");
+                Info <<  "BC creating MUI interface " << endl;
+                mui_ifs=mui::create_uniface<mui::mui_config>( "BC", ifsName );	    
+                Info <<  "BC Finsihed  MUI interface " << endl; 
+            }else if (iterCount > 0)
+            {
+                std::vector<mui::point<mui::mui_config::REAL, 3>> fetch_locs = mui_ifs[0]->fetch_points<mui::mui_config::REAL>( "flux", iterCount, temporal_sampler ); // Extract the locations stored in the interface at time=0
+                //std::vector<double> fetch_vals = mui_ifs[0]->fetch_values<mui::mui_config::REAL>( "flux", iterCount, temporal_sampler );
+                double fetch_val  = mui_ifs[0]->fetch("flux", fetch_locs[0], iterCount, spatial_sampler, temporal_sampler);
+                Info << "Fetched " << fetch_val << " from " << fetch_locs[0][0] << ", " << fetch_locs[0][1] << ", " << fetch_locs[0][2] << "\n";
+                const vectorField& Cf = patch().Cf();
+                scalarField& temp = *this;
+                forAll(Cf, faceI)
+                {
+                    temp[faceI] = 100;
+                    Info << "BC set temp at face " << faceI << " to " << fetch_vals[faceI] << " at time " << iterCount << endl;
+                }
+
+            }
+            iterCount += 1;
+        #};
+    }
+*/
+    leftWall
+    {
+        type            fixedValue;
+        value           uniform 373;
+    }
+
+    "(right|top|bottom)Wall"
+    {
+        type            fixedValue;
+        value           uniform 273;
+    }
+
+    frontAndBackPlanes
+    {
+        type            empty;
+    }
+}
+
+
+// ************************************************************************* //

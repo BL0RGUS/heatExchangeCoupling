@@ -1,0 +1,15 @@
+#!/bin/sh
+make
+
+#restore0Dir
+
+
+
+#decomposePar -force
+
+
+mpirun -np 1 ./ping : -np 1 python3 -m mpi4py main.py 2>&1 | tee output.log
+
+#runApplication reconstructPar
+
+#------------------------------------------------------------------------------

@@ -1,0 +1,22 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+make
+
+restore0Dir
+
+
+blockMesh
+
+decomposePar -force
+
+
+mpirun -np 2 rhoPimpleFoam -parallel -mpi-split-by-appnum
+
+runApplication reconstructPar
+
+
+
+paraFoam &
+#------------------------------------------------------------------------------

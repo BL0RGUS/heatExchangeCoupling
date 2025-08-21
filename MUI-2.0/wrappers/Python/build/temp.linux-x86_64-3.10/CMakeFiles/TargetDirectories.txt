@@ -1,0 +1,3 @@
+/home/blairmccormick/Documents/heatExchangeCoupling/MUI-2.0/wrappers/Python/build/temp.linux-x86_64-3.10/CMakeFiles/mui4py_mod.dir
+/home/blairmccormick/Documents/heatExchangeCoupling/MUI-2.0/wrappers/Python/build/temp.linux-x86_64-3.10/CMakeFiles/edit_cache.dir
+/home/blairmccormick/Documents/heatExchangeCoupling/MUI-2.0/wrappers/Python/build/temp.linux-x86_64-3.10/CMakeFiles/rebuild_cache.dir
