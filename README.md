@@ -68,7 +68,7 @@ TODO
 
 In the original temperature equation discretisation it is assumed that $\alpha$ is some constant (Spatially Independent) that we can essentially ignore until the end. When we have more than 1 material this is no longer case as alpha is now spatially dependent and must be included in the maths. In the end this gives a very similar [equation](https://physics.stackexchange.com/questions/107761/how-to-solve-the-heat-equation-for-compound-materials-with-different-heat-conduc):
 
-$T^{n+1}_{i, j} = T^n_{i, j} + \frac{\Delta t}{\Delta x^2}(\alpha_{i+0.5}(T^n_{i+1, j} -T^n_{i, j})+\alpha_{i-0.5}(T^n_{i-1, j} -T^n_{i, j})) + \alpha_i\frac{\Delta t}{\Delta y^2}(T^n_{i, j+1} -2T^n_{i, j}+T^n_{i,j-1})$
+$T_{i, j}^{n+1}= T^n_{i, j} + \frac{\Delta t}{\Delta x^2}(\alpha_{i+0.5}(T^n_{i+1, j} -T^n_{i, j})+\alpha_{i-0.5}(T^n_{i-1, j} -T^n_{i, j})) + \alpha_i\frac{\Delta t}{\Delta y^2}(T^n_{i, j+1} -2T^n_{i, j}+T^n_{i,j-1})$
 
 Where $\alpha_{i+0.5} = \frac{\alpha_{i+1} + \alpha_i}{2}$
 #### Validation
