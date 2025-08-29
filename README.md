@@ -54,7 +54,7 @@ options:
   --solverNum SOLVERNUM
 ```
 
-MUI is used to allow up to 2 solvers with different parameters to communicate and solve more complex cases. The limitation in the number of solvers is due to mui4py only allowing 2 domains to connect to a given interface, this could be avoided by rewriting in C++.
+MUI is used to allow multiple solvers with different parameters to communicate and solve more complex cases. 
 
 #### numpy implementation
 
@@ -103,7 +103,6 @@ This is the simplest case with only 1 layer.
 
 <img src="temperatureSolver/case1/case1Graph.png" width="500">
 
-###### Runtime: 11.4s
 
 ###### Comments
 
@@ -118,7 +117,7 @@ Thus the error in $T_1$ is 0% and the error in $\frac{\partial T}{\partial x}$ i
 To run use:
 
 ```bash
-mpirun -np 1 python3 -m temperatureSolver.case2.main --solverNum 0 --length 0.025 --nodes 100 : -np 1 python3 -m temperatureSolver.case2.main --length 0.025 --solverNum 1 --nodes 100
+mpirun -np 2 python3 -m temperatureSolver.case2.main --length 0.025 --nodes 100
 ```
 
 <img src="temperatureSolver/case2/case.png" width="200">
@@ -140,8 +139,6 @@ mpirun -np 1 python3 -m temperatureSolver.case2.main --solverNum 0 --length 0.02
 <img src="temperatureSolver/case2/case2Graph.png" width="800">
 
 
-###### Runtime: 20.542s
-
 ###### Comments
 
 Now we should obtain a different gradients for each solver as the second plate has a lower diffusivity
@@ -151,7 +148,7 @@ Now we should obtain a different gradients for each solver as the second plate h
 To run use:
 
 ```bash
-mpirun -np 1 python3 -m temperatureSolver.case2.main --solverNum 0 --length 0.025 --nodes 100 : -np 1 python3 -m temperatureSolver.case2.main --length 0.025 --solverNum 1 --nodes 100 --alpha 2.5e-4
+mpirun -np 1 python3 -m temperatureSolver.case2.main --length 0.025 --nodes 100 : -np 1 python3 -m temperatureSolver.case2.main --length 0.025 --nodes 100 --alpha 2.5e-4
 ```
 
 ###### Parameters
@@ -170,17 +167,45 @@ mpirun -np 1 python3 -m temperatureSolver.case2.main --solverNum 0 --length 0.02
 
 <img src="temperatureSolver/case2/case2Graph2Materials.png" width="600">
 
-###### Runtime: 44.254s*
-\* This is because $\delta t$ is set proportional to the maximum value of alpha.
-
 
 ###### Comments
 
 Theoretically, the value of $T_2$ should be:
 
-$T_2 = T_1 - \frac{Qx_1}/{A\alpha_1}$ where $Q = \frac{T_1-T_3}{\frac{x_1}{\alpha_1 A} + \frac{x_2}{\alpha_2 A} } = \frac{100}{\frac{1}{\alpha_1}+\frac{1}{2\alpha_1}} = \frac{200\alpha_1}{3}$
+$T_2 = T_1 - \frac{Qx_1}{A\alpha_1}$ where $Q = \frac{T_1-T_3}{\frac{x_1}{\alpha_1 A} + \frac{x_2}{\alpha_2 A} } = \frac{100}{\frac{1}{\alpha_1}+\frac{1}{2\alpha_1}} = \frac{200\alpha_1}{3}$
 
 Subbing $Q$ in we obtain
 $T_2 = 100 - \frac{200\alpha_1 x_1}{3A \alpha_1} = 100 - \frac{200}{3} = 33.33$
 
 The measured value of $T_2$ is 33.85 (+1.5%)
+
+##### Case4 - 3 Layers 3 Materials (Non-conforming mesh)
+
+To run use:
+
+```bash
+mpirun -np 1 python3 -m temperatureSolver.case2.main --length 0.025 --nodes 100 : -np 1 python3 -m temperatureSolver.case2.main --length 0.025 --nodes 20 --alpha 2.5e-4 : -np 1 python3 -m temperatureSolver.case2.main --length 0.025 --nodes 100 --alpha 0.635e-4
+```
+
+<img src="temperatureSolver/case3/case.png" width="200">
+
+###### Parameters
+
+- Layer length $x_1 = 0.025$ m, $x_2 = 0.0125$ m, $x_3 = 0.0125$ m
+- Layer height: 1m (this is irrelevant in practice since flux at the top and bottom is always 0)
+- Inital Temperature $T_1 = 100$
+- Final Temperature $T_4 = 0$
+- Thermal diffusivity $\alpha_1 = 1.27 \times 10^{-4} $ ([Pure Gold](https://www.engineersedge.com/heat_transfer/thermal_diffusivity_table_13953.htm)) $\alpha_2 = 2\alpha_1 = 2.54 \times 10^{-4}$, $\alpha_3 = \frac{\alpha_1}{2} = 0.635 \times 10^{-4}$
+- Simulation time: 20s
+- number of nodes: 20,400 (100x100x2 + 20x20)
+
+###### Results
+<img src="temperatureSolver/case3/case3ColorMap.png" width="600">
+
+<img src="temperatureSolver/case3/case3Graph.png" width="800">
+
+###### Comments
+
+
+
+##### Case5 - Fixed heat flux

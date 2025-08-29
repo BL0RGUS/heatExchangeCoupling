@@ -8,7 +8,6 @@ class Args():
         parser.add_argument('--length', type=float, default=0.05)
         parser.add_argument('--alpha', type=float, default=1.27e-4)
         parser.add_argument('--nodes', type=int, default=40)
-        parser.add_argument('--solverNum', type=int, default=0)
 
 
         self.args = parser.parse_args()

@@ -19,7 +19,7 @@ i = 0
 print("Starting timer, timestep : {:.2f}".format(solver.dt))
 startTime = time.time()
 while i < solver.time:
-    solver.calculateHeatEquationWithNumpy(i, animate=False)
+    solver.calculateHeatEquationWithNumpy(i)
     i += solver.dt
     
 

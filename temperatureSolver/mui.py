@@ -1,76 +1,118 @@
 import mui4py
+from mpi4py import MPI
 import numpy as np
 
 
 class MUI:
 
-    def __init__(self, solverNum, nodes):
-        self.solverNum = solverNum
+    def __init__(self, nodes, dt):
         self.nodes = nodes
+        self.dt = dt
 
         # Interface setup
-        MUI_COMM_WORLD = mui4py.mpi_split_by_app()
-        dims = 2
-        config = mui4py.Config(dims, mui4py.FLOAT64)
+        mui4py.mpi_split_by_app()
 
-        iface =  ["ifs"]
-        domain = "Solver" + str(solverNum)
+        self.MPI_COMM_WORLD = MPI.COMM_WORLD
+
+        dims = 1
+        config = mui4py.Config(dims, mui4py.FLOAT64)
+        
+        self.solverNum = self.MPI_COMM_WORLD.Get_rank()
+        self.numSolvers = self.MPI_COMM_WORLD.Get_size()
+
+
+        if self.numSolvers == 1:
+            return None
+
+        if self.solverNum == 0:
+            iface =  ["ifs1"]
+        elif self.solverNum == self.numSolvers-1:
+            iface =  ["ifs" + str(self.solverNum)]
+        else:
+            iface = ["ifs"+str(self.solverNum), "ifs"+str(self.solverNum+1)]
+
+        domain = "Solver" + str(self.solverNum)
         unifaces = mui4py.create_unifaces(domain, iface, config)
 
-        self.uniface = unifaces["ifs"]
-
-        self.uniface.set_data_types({"temp": mui4py.FLOAT64,
-                                     "dt": mui4py.FLOAT64,
+        if self.solverNum != 0:
+            self.leftUniface = unifaces["ifs" + str(self.solverNum)]
+            self.leftUniface.set_data_types({"temp": mui4py.FLOAT64,
                                      "alpha": mui4py.FLOAT64})
 
+        if self.solverNum != self.numSolvers-1:
+            self.rightUniface = unifaces["ifs" + str(self.solverNum+1)]
+
+            self.rightUniface.set_data_types({"temp": mui4py.FLOAT64,
+                                     "alpha": mui4py.FLOAT64,
+                                     "nodes":mui4py.INT})
+
+        # Use MPI allreduce to find the solver with the smallest dt and the most nodes
+        self.minDt, self.maxNodes = self.findSuperlativeParameters()
+
         #TODO: change spatial sampler so we can use different mesh resolution between solvers
-        self.s_sampler = mui4py.SamplerExact()
+        self.s_sampler = mui4py.SamplerPseudoNearestNeighbor(0.5)
         self.t_sampler = mui4py.TemporalSamplerExact()
 
-        # rank = MUI_COMM_WORLD.Get_rank()
-        # size = MUI_COMM_WORLD.Get_size()
+        ## Point array for fetching using fetch_many and push_many
+        # needs to be normalised to the maximum number nodes for any solver
+        i = 0
+        c = 0
+        step = self.maxNodes/self.nodes
+        self.points = np.zeros((self.nodes, 1))
+        while c < self.nodes:
+            self.points[c] = [i]
+            i += step
+            c += 1
 
-        ## Point arrays for fetching using fetch_many
-        self.fetchPointsLeft = np.zeros((self.nodes, 2))
-        self.fetchPointsRight = np.zeros((self.nodes, 2))
-        ## Point arrays for push using push_many
-        self.pushPointsLeft = np.zeros((self.nodes, 2))
-        self.pushPointsRight = np.zeros((self.nodes, 2))
+    def findSuperlativeParameters(self):
+        minDt = self.MPI_COMM_WORLD.allreduce(self.dt, op=MPI.MIN)
+        maxNodes = self.MPI_COMM_WORLD.allreduce(self.nodes, op=MPI.MAX)
+        
+        return (minDt, maxNodes)
 
-        ## x-value within mui coord system of the boundary we want to fetch from (leftmost cell of solver to the right)
-        fetchLeftBoundary = (self.nodes*(self.solverNum+1))
-        #x-value within mui coord system of the boundary we want to push(leftmost cell of this solver)
-        pushLeftBoundary = self.nodes*self.solverNum
+    def getAlphas(self, alpha):
+        rightAlpha = None
+        leftAlpha = None
+        if self.solverNum != 0:
+            self.leftUniface.push("alpha", [self.solverNum], alpha)
+            self.leftUniface.commit( 0 )
+            leftAlpha = self.leftUniface.fetch("alpha", [self.solverNum-1], 0, mui4py.SamplerExact(), mui4py.TemporalSamplerExact())
+        else:
+            leftAlpha = alpha
+        if self.solverNum != self.numSolvers-1:
+            self.rightUniface.push("alpha", [self.solverNum], alpha)
+            self.rightUniface.commit( 0 )
 
+            rightAlpha = self.rightUniface.fetch("alpha", [self.solverNum+1], 0, mui4py.SamplerExact(), mui4py.TemporalSamplerExact())
+        else:
+            rightAlpha = alpha
+            
+        return (leftAlpha, rightAlpha)
 
-        ## x-value within mui coord system of the boundary we want to fetch from (righmost most cell of solver to the left)
-        fetchRightBoundary = (self.nodes*self.solverNum)-1
-        #x-value within mui coord system of the boundary we want to push(rightmost cell of this solver)
-        pushRightBoundary = self.nodes*(self.solverNum+1)-1
-
-        for i in range(nodes):
-            self.fetchPointsLeft[i] = [fetchLeftBoundary, i]
-            self.fetchPointsRight[i] = [fetchRightBoundary, i]
-            self.pushPointsLeft[i] = [pushLeftBoundary, i]
-            self.pushPointsRight[i] = [pushRightBoundary, i]
     
-    def pushRight(self, vals, data="temp"):
-        self.uniface.push_many(data, self.pushPointsRight, vals)
+    def pushRight(self, vals, time, data="temp"):
+        self.rightUniface.push_many(data, self.points, vals)
+        self.rightUniface.commit( time )
 
-    def pushLeft(self, vals, data="temp"):
-        self.uniface.push_many(data, self.pushPointsLeft, vals)
-    
-    def commit(self, time):
-        self.uniface.commit( time )
+    def pushLeft(self, vals, time, data="temp"):
+        self.leftUniface.push_many(data, self.points, vals)
+        self.leftUniface.commit( time )
+            
 
     def fetchRightPrev(self, time, data="temp"):
-        vals = self.uniface.fetch_many(data, self.fetchPointsRight, time, 
+        vals = self.leftUniface.fetch_many(data, self.points, time, 
                                        self.s_sampler, self.t_sampler)
+        
+        # forget to save memory
+        self.leftUniface.forget( time-self.dt)
         #print( vals )
         return vals
     
     def fetchLeftNext(self, time, data="temp"):
-        vals = self.uniface.fetch_many(data, self.fetchPointsLeft, time, 
+        vals = self.rightUniface.fetch_many(data, self.points, time, 
                                        self.s_sampler, self.t_sampler)
+        
+        # forget to save memory
+        self.rightUniface.forget( time-self.dt)
         #print( vals )
         return vals

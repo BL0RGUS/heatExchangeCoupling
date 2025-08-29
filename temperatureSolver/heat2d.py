@@ -1,11 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import mui4py
 from temperatureSolver.args import Args
 from temperatureSolver.mui import MUI
 
 class Heat2d:
-    def __init__(self, time=1.0, dualSolver=False, maxTemp=100):
+    def __init__(self, time=1.0):
         # Parse solver arguments
         args = Args().args
 
@@ -14,47 +13,52 @@ class Heat2d:
         self.time = time # simulation time
         self.nodes = args.nodes # mesh res
         self.alpha = args.alpha # diffusivity
-        self.solverNum = args.solverNum
-        self.dualSolver = dualSolver
-        print("Created heat solver with size {:f}m x {:f}m, {:d} nodes and diffusivity {:10f}".format(self.height, self.width, self.nodes**2, self.alpha))
+
+
         # derived properties
         self.dx = self.width/self.nodes
-        self.dy = self.height/self.nodes    
-         # if doing multiphase create a mui interface
-        if self.dualSolver:
-            self.numSolvers = 2
-            self.mui = MUI(self.solverNum, self.nodes)
-        else:
-            self.numSolvers = 1
+        self.dy = self.height/self.nodes 
+
         # Define dt according to Courant-Friedrichs-Lewy condition in 2 dimensions
-        # (https://en.wikipedia.org/wiki/Courant%E2%80%93Friedrichs%E2%80%93Lewy_condition)
-        self.dt = min(self.dx**2/(4*self.alpha), self.dy**2/(4*self.alpha))
+        # (https://en.wikipedia.org/wiki/Courant%E2%80%93Friedrichs%E2%80%93Lewy_condition)  
+        self.dt = min(self.dx**2/(2*self.alpha), self.dy**2/(2*self.alpha))  
 
-        # if doing multisolver sync dt with the other interface
-        if dualSolver:
-            self.mui.uniface.push("dt", [self.solverNum, 0], self.dt)
-            self.mui.uniface.push("alpha", [self.solverNum, 1], self.alpha)
-            self.mui.commit( 0 )
-            otherDt = self.mui.uniface.fetch("dt", [(self.solverNum+1)%2, 0], 0, mui4py.SamplerExact(), mui4py.TemporalSamplerExact())
-            self.otherAlpha = self.mui.uniface.fetch("alpha", [(self.solverNum+1)%2, 1], 0, mui4py.SamplerExact(), mui4py.TemporalSamplerExact())
-            self.alphaAvg = (self.otherAlpha + self.alpha)/(2*self.alpha)
-            self.dt = min(self.dt, otherDt)
-        else:
-            self.otherAlpha = self.alpha
-        print("dt set at: {:f}".format(self.dt))
-        print("dx set at: {:f}".format(self.dx))
-        print("dy set at: {:f}".format(self.dy))
+        # create MUI interface 
+        self.mui = MUI( self.nodes, self.dt)
 
+        # get solverNum and numSolvers from mui
+        self.solverNum = self.mui.solverNum
+        self.numSolvers = self.mui.numSolvers
+        print("Solver: {:d}, Number of Solvers: {:d}".format(self.solverNum, self.numSolvers))
 
+        print("Created heat solver {:d} with size {:f}m x {:f}m, {:d} nodes and diffusivity {:10f}".format(self.solverNum, self.height, self.width, self.nodes**2, self.alpha))
+
+        
+        # if doing multisolver create mui interface and sync dt and alpha with the other interfaces
+        if self.numSolvers > 1:
+            self.dt = self.mui.minDt
+            
+            prevAlpha, nextAlpha = self.mui.getAlphas(self.alpha)
+
+            self.alphaAvgNext = (nextAlpha + self.alpha)/(2*self.alpha) 
+            self.alphaAvgPrev = (prevAlpha + self.alpha)/(2*self.alpha)
+
+        if self.solverNum == 0:
+            print("dt set at: {:f}".format(self.dt))
 
         # Temperature array
         self.T = np.zeros((self.nodes, self.nodes))
 
         # Visualisation
         fig, self.axis = plt.subplots()
-        self.pcm = self.axis.pcolormesh(self.T, cmap=plt.cm.jet, vmin=0, vmax = maxTemp)
+        self.pcm = self.axis.pcolormesh(self.T, cmap=plt.cm.jet, vmin=0, vmax = 100)
         plt.colorbar(self.pcm, ax=self.axis)
-        
+
+        # draw gridlines
+        self.axis.grid(which='major', axis='both', linestyle='-', color='0.8', linewidth=0.5)
+        self.axis.set_xticks(np.arange(0, self.nodes, 1))
+        self.axis.set_yticks(np.arange(0, self.nodes, 1))
+
         # setup for heat eq with numpy
         self.zerosX = np.zeros((1, self.nodes))
         self.zerosY = np.zeros((self.nodes, 1))
@@ -64,10 +68,13 @@ class Heat2d:
     def initialiseTempField(self, val: float):
         self.T[:, :] = val
 
-    def setTempIndex(self, x, y, val):
-        if 0 <= x < self.nodes and 0 <= y < self.nodes:
-            self.T[x][y] = val
+    def setLeftBoundary(self, val: float):
+        self.T[0, :] = val
 
+    def setColorMapScale(self, min, max):
+        self.pcm.set_clim(min, max)
+       
+        
     
     def calculateHeatEquation(self, time, animate = False):
         # local variable setup
@@ -81,14 +88,14 @@ class Heat2d:
         # if self.solverNum == 0 there is no previous right boundary so ignore fetch and use initial condition
         if self.solverNum > 0:
             ## push T[0, :] (left boundary)
-            self.mui.pushLeft(self.T[0, : ])
-            self.mui.commit(time)
+            self.mui.pushLeft(self.T[0, : ], time)
             #fetch right boundary of previous solver
             rightPrev = self.mui.fetchRightPrev(time)
             # set T[0, :] (left boundary ) according to forward difference approximation  
             # See README for more information on multilayer discretisation
             for y in range(0, self.nodes):
-                xComponent = fracX * (self.alpha *(t[1][y]-t[0][y] + self.alphaAvg*(rightPrev[y]-t[0][y])))
+                # TODO: change this to use double forward
+                xComponent = fracX * (self.alpha *(t[1][y]-t[0][y] + self.alphaAvgPrev*(rightPrev[y]-t[0][y])))
 
                 if  0 < y < self.nodes-1:
                     yComponent = fracY * (t[0][y+1] - 2*t[0][y] + t[0][y-1])
@@ -132,7 +139,7 @@ class Heat2d:
     
         # set T[-1, :] (left boundary ) according to forward difference approximation
         for y in range(0, self.nodes):
-            xComponent = fracX * (self.alpha*(t[-2][y]-t[-1][y] + self.alphaAvg*(leftNext[y]-t[-1][y])))
+            xComponent = fracX * (self.alpha*(t[-2][y]-t[-1][y] + self.alphaAvgNext*(leftNext[y]-t[-1][y])))
 
             if  0 < y < self.nodes-1:
                 yComponent = fracY * (t[-1][y+1] - 2*t[-1][y] + t[-1][y-1])
@@ -146,8 +153,7 @@ class Heat2d:
         
         # push the values at the rightBoundary
         if self.solverNum != self.numSolvers-1:
-            self.mui.pushRight(self.T[-1, : ])
-            self.mui.commit(time)
+            self.mui.pushRight(self.T[-1, :] ,time)
             
         if animate:
             self.pcm.set_array(self.T.T)
@@ -161,16 +167,16 @@ class Heat2d:
         rightPrev = None
         if self.solverNum > 0:
             ## push T[0, :] (left boundary)
-            self.mui.pushLeft(self.T[0, : ])
-            self.mui.commit(time)
+            self.mui.pushLeft(self.T[0, : ], time)
             #fetch right boundary of previous solver
             rightPrev = [self.mui.fetchRightPrev(time)]
-            rightPrev[0] *= self.alphaAvg
+            rightPrev[0] *= self.alphaAvgPrev
 
         leftNext = None
         if self.solverNum != self.numSolvers-1:
+            self.mui.pushRight(self.T[-1, : ], time)
             leftNext = [self.mui.fetchLeftNext(time)]
-            leftNext[0] *= self.alphaAvg
+            leftNext[0] *= self.alphaAvgNext
 
         Txminus1 = None
         Txplus1 = None
@@ -179,22 +185,20 @@ class Heat2d:
             Txplus1 = np.concatenate((self.T[:1], self.T[2:], self.T[-1:]))
             Txminus1 = np.concatenate((self.T[:1], self.T[:-2], self.T[-1:]))
         elif self.solverNum == 0:
-            Txplus1 = np.concatenate((self.T[:1], self.T[2:], leftNext))
+            Txplus1 = np.concatenate((self.T[:1],  self.T[2:], leftNext))
             Txminus1 = np.concatenate((self.T[:1], self.T[:-1]))
-            Tx[-1, : ] *= self.alphaAvg
+            Tx[-1, : ] *= self.alphaAvgNext
         elif self.solverNum == self.numSolvers - 1:
             Txplus1 = np.concatenate((self.T[1:], self.zerosX))
             Txminus1 = np.concatenate((rightPrev, self.T[:-1]))
-            Tx[0, : ] *= self.alphaAvg
+            Tx[0, : ] *= self.alphaAvgPrev
         else:
-            #TODO: fix alpha stuff for more than 2 materials
-            ## This is for if we have more than 2 solvers
             Txplus1 = np.concatenate((self.T[1:], leftNext))
             Txminus1 = np.concatenate((rightPrev, self.T[:-1]))
-            Tx[-1, : ] *= self.alphaAvg
-            Tx[0, : ] *= self.alphaAvg
+            Tx[-1, : ] *= self.alphaAvgNext
+            Tx[0, : ] *= self.alphaAvgPrev
 
-
+    
         xComponent =  Txplus1 - Tx - self.T + Txminus1
         xComponent *= self.dt/(self.dx**2)
         # Y
@@ -203,12 +207,8 @@ class Heat2d:
         ghostFlux = np.concatenate((self.T[:, :1], self.zerosGhost, self.T[:, -1:]), axis=1)
 
         yComponent = Typlus1 -2*self.T + Tyminus1 + ghostFlux
-        yComponent *= self.dt/(self.dx**2)
+        yComponent *= self.dt/(self.dy**2)
         self.T = self.T + self.alpha*(yComponent + xComponent)
-
-        if self.solverNum != self.numSolvers-1:
-            self.mui.pushRight(self.T[-1, : ])
-            self.mui.commit(time)
         
         if animate:
             self.pcm.set_array(self.T.T)
@@ -223,7 +223,7 @@ class Heat2d:
 
         fig, ax = plt.subplots()
 
-        xRange = np.arange(self.solverNum*self.width, (self.solverNum+1)*self.width, self.dx)
+        xRange = np.linspace(self.solverNum*self.width, (self.solverNum+1)*self.width, self.nodes)
         tempData = np.average(self.T, axis=1)
 
         slope, intercept = np.polyfit(xRange, tempData, 1)
@@ -233,10 +233,9 @@ class Heat2d:
         ax.set_ylabel("Temp (K)")
         ax.set_title("Temp from Solver {:d}. Equation of line: T = {:.3f}x + {:.2f}".format(self.solverNum, slope, intercept))
         
-        if(self.solverNum == 0):
-            print("T2 estimated as {:2f}".format(np.average(self.T[-1])))
-        else:
-            print("T2 estimated as {:2f}".format(np.average(self.T[0])))
+        if(self.solverNum != self.numSolvers - 1):
+            print("T{:d} estimated as {:2f}".format(self.solverNum +2, np.average(self.T[-1])))
+        
             
         plt.show()
 
