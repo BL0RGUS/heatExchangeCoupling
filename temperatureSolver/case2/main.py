@@ -5,12 +5,7 @@ import time
 # define temperature solver
 # height, width, time, nodes(mesh res), alpha
 
-solver = Heat2d(time = 20)
-
-# Initial conditions
-solver.initialiseTempField(0) # Set every cell to 20 degrees Celcius (293K)
-if solver.solverNum == 0:
-    solver.setLeftBoundary(100)
+solver = Heat2d(time = 30)
 
 
 # Solver loop

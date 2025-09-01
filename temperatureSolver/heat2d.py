@@ -38,10 +38,10 @@ class Heat2d:
         if self.numSolvers > 1:
             self.dt = self.mui.minDt
             
-            prevAlpha, nextAlpha = self.mui.getAlphas(self.alpha)
+        prevAlpha, nextAlpha = self.mui.getAlphas(self.alpha)
 
-            self.alphaAvgNext = (nextAlpha + self.alpha)/(2*self.alpha) 
-            self.alphaAvgPrev = (prevAlpha + self.alpha)/(2*self.alpha)
+        self.alphaAvgNext = (nextAlpha + self.alpha)/(2*self.alpha) 
+        self.alphaAvgPrev = (prevAlpha + self.alpha)/(2*self.alpha)
 
         if self.solverNum == 0:
             print("dt set at: {:f}".format(self.dt))
@@ -55,21 +55,33 @@ class Heat2d:
         plt.colorbar(self.pcm, ax=self.axis)
 
         # draw gridlines
-        self.axis.grid(which='major', axis='both', linestyle='-', color='0.8', linewidth=0.5)
-        self.axis.set_xticks(np.arange(0, self.nodes, 1))
-        self.axis.set_yticks(np.arange(0, self.nodes, 1))
+        #self.axis.grid(which='major', axis='both', linestyle='-', color='0.8', linewidth=0.5)
+        #self.axis.set_xticks(np.arange(0, self.nodes, 1))
+        #self.axis.set_yticks(np.arange(0, self.nodes, 1))
 
         # setup for heat eq with numpy
         self.zerosX = np.zeros((1, self.nodes))
         self.zerosY = np.zeros((self.nodes, 1))
         self.zerosGhost = np.zeros((self.nodes, self.nodes-2))
 
+        # set default BC
+        if self.solverNum == 0:
+            self.setBoundaryCondition('temp', 100)
+
 
     def initialiseTempField(self, val: float):
         self.T[:, :] = val
 
-    def setLeftBoundary(self, val: float):
-        self.T[0, :] = val
+    def setBoundaryCondition(self, type: str, val: float, thermalConductivity=318):
+        if type == 'flux':
+            self.boundaryType = 'flux'
+            self.boundaryValue = (np.full(shape=(1, self.nodes), fill_value=val, dtype=np.float64)*self.dx)/thermalConductivity
+        elif type == 'temp':
+            self.boundaryType = 'temp'
+            self.boundaryValue = np.full(shape=(1, self.nodes), fill_value=val, dtype=np.float64)
+            
+        else:
+            raise ValueError('Boundary condition can have type \'temp\' or \'flux\', not ' + type + ".")
 
     def setColorMapScale(self, min, max):
         self.pcm.set_clim(min, max)
@@ -164,6 +176,8 @@ class Heat2d:
     ## use the above function to understand whats going on
     def calculateHeatEquationWithNumpy(self, time, animate = False):
         ## Idea: Do everything at once i.e xComponent =(dt/dx^2) Txplus1 + -2T + Txminus1
+
+        # push/fetch boundaries to/from adjacent solvers
         rightPrev = None
         if self.solverNum > 0:
             ## push T[0, :] (left boundary)
@@ -171,37 +185,38 @@ class Heat2d:
             #fetch right boundary of previous solver
             rightPrev = [self.mui.fetchRightPrev(time)]
             rightPrev[0] *= self.alphaAvgPrev
+        else:
+            if self.boundaryType == 'temp':
+                rightPrev = self.boundaryValue
+            else:
+                rightPrev = self.boundaryValue + self.T[0, :]
 
         leftNext = None
         if self.solverNum != self.numSolvers-1:
             self.mui.pushRight(self.T[-1, : ], time)
             leftNext = [self.mui.fetchLeftNext(time)]
             leftNext[0] *= self.alphaAvgNext
+        else:
+            leftNext = self.zerosX
 
         Txminus1 = None
         Txplus1 = None
         Tx = self.T.copy()
-        if self.solverNum == 0 and self.numSolvers == 1:
-            Txplus1 = np.concatenate((self.T[:1], self.T[2:], self.T[-1:]))
-            Txminus1 = np.concatenate((self.T[:1], self.T[:-2], self.T[-1:]))
-        elif self.solverNum == 0:
-            Txplus1 = np.concatenate((self.T[:1],  self.T[2:], leftNext))
-            Txminus1 = np.concatenate((self.T[:1], self.T[:-1]))
-            Tx[-1, : ] *= self.alphaAvgNext
-        elif self.solverNum == self.numSolvers - 1:
-            Txplus1 = np.concatenate((self.T[1:], self.zerosX))
-            Txminus1 = np.concatenate((rightPrev, self.T[:-1]))
-            Tx[0, : ] *= self.alphaAvgPrev
-        else:
-            Txplus1 = np.concatenate((self.T[1:], leftNext))
-            Txminus1 = np.concatenate((rightPrev, self.T[:-1]))
-            Tx[-1, : ] *= self.alphaAvgNext
-            Tx[0, : ] *= self.alphaAvgPrev
+
+        # set up shifted versions of T (xComponent)
+        Txplus1 = np.concatenate((self.T[1:], leftNext))
+        Txminus1 = np.concatenate((rightPrev, self.T[:-1]))
+
+        # for edge solvers one of these is redundant, could be made more efficient
+        Tx[-1, : ] *= self.alphaAvgNext
+        Tx[0, : ] *= self.alphaAvgPrev
+
 
     
         xComponent =  Txplus1 - Tx - self.T + Txminus1
         xComponent *= self.dt/(self.dx**2)
-        # Y
+
+        # yComponent
         Typlus1 = np.concatenate((self.T[:, 1:], self.zerosY), axis=1)
         Tyminus1 = np.concatenate((self.zerosY, self.T[:, :-1]), axis=1)
         ghostFlux = np.concatenate((self.T[:, :1], self.zerosGhost, self.T[:, -1:]), axis=1)
@@ -232,10 +247,11 @@ class Heat2d:
         ax.set_xlabel("x (m)")
         ax.set_ylabel("Temp (K)")
         ax.set_title("Temp from Solver {:d}. Equation of line: T = {:.3f}x + {:.2f}".format(self.solverNum, slope, intercept))
-        
         if(self.solverNum != self.numSolvers - 1):
-            print("T{:d} estimated as {:2f}".format(self.solverNum +2, np.average(self.T[-1])))
-        
+                print("T{:d} estimated as {:2f}".format(self.solverNum +2, np.average(self.T[-1])))
+        if self.solverNum == 0 :
+            if self.boundaryType == 'flux':
+                print("T{:d} estimated as {:2f}".format(self.solverNum, np.average(self.T[0])))
             
         plt.show()
 
