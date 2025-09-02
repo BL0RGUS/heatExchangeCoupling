@@ -5,7 +5,7 @@ import time
 # define temperature solver
 # height, width, time, nodes(mesh res), alpha
 
-solver = Heat2d(time = 30)
+solver = Heat2d(time = 30, nodes=100)
 
 
 

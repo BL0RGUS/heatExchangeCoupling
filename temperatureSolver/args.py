@@ -7,8 +7,6 @@ class Args():
         parser.add_argument('--height', type=float, default=1.0)
         parser.add_argument('--length', type=float, default=0.05)
         parser.add_argument('--alpha', type=float, default=1.27e-4)
-        parser.add_argument('--nodes', type=int, default=40)
-
-
+        
         self.args = parser.parse_args()
         

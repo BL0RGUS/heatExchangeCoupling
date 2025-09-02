@@ -4,14 +4,14 @@ from temperatureSolver.args import Args
 from temperatureSolver.mui import MUI
 
 class Heat2d:
-    def __init__(self, time=1.0):
+    def __init__(self, time=1.0, nodes=40):
         # Parse solver arguments
         args = Args().args
 
         self.height = args.height # geometry
         self.width = args.length # geometry
         self.time = time # simulation time
-        self.nodes = args.nodes # mesh res
+        self.nodes = nodes # mesh res
         self.alpha = args.alpha # diffusivity
 
 
@@ -87,94 +87,9 @@ class Heat2d:
         self.pcm.set_clim(min, max)
        
         
-    
-    def calculateHeatEquation(self, time, animate = False):
-        # local variable setup
-        t = self.T.copy()
-        xComponent = 0
-        yComponent = 0
-        fracX = self.dt/(self.dx**2)
-        fracY = self.dt/(self.dy**2)
-
-        # before doing anything fetch values from the left boundary (previous right boundary)
-        # if self.solverNum == 0 there is no previous right boundary so ignore fetch and use initial condition
-        if self.solverNum > 0:
-            ## push T[0, :] (left boundary)
-            self.mui.pushLeft(self.T[0, : ], time)
-            #fetch right boundary of previous solver
-            rightPrev = self.mui.fetchRightPrev(time)
-            # set T[0, :] (left boundary ) according to forward difference approximation  
-            # See README for more information on multilayer discretisation
-            for y in range(0, self.nodes):
-                # TODO: change this to use double forward
-                xComponent = fracX * (self.alpha *(t[1][y]-t[0][y] + self.alphaAvgPrev*(rightPrev[y]-t[0][y])))
-
-                if  0 < y < self.nodes-1:
-                    yComponent = fracY * (t[0][y+1] - 2*t[0][y] + t[0][y-1])
-                # otherwise use a 'ghost flux' of 0
-                elif y == 0:
-                    yComponent = fracY * (t[0][y+1] - t[0][y])
-                elif y == self.nodes-1:
-                    yComponent = fracY * (t[0][y-1] - t[0][y])      
-                 
-                self.T[0][y] = t[0][y] + xComponent + self.alpha * yComponent
-     
-        
-        for x in range(1, self.nodes):
-            for y in range(0, self.nodes):
-                # if we are not at the x boundaries use the regular forward differenece approximation for the x Component
-                xComponent = None   
-                if 0 < x < self.nodes-1:
-                    xComponent = fracX * (t[x+1][y] - 2*t[x][y] + t[x-1][y])
-                else:
-                    #ghost flux
-                    xComponent = fracX * (t[x-1][y] - t[x][y])
-                
-                # if we are not at the y boundaries use the regular forward differenece approximation for the y Component
-                if  0 < y < self.nodes-1:
-                    yComponent = fracY * (t[x][y+1] - 2*t[x][y] + t[x][y-1])
-                # otherwise use a 'ghost flux' of 0
-                elif y == 0:
-                    yComponent = fracY * (t[x][y+1] - t[x][y])
-                elif y == self.nodes-1:
-                    yComponent = fracY * (t[x][y-1] - t[x][y])   
-                        
-                self.T[x][y] = t[x][y] + self.alpha * (xComponent + yComponent)
-
-     
-        #fetch left boundary of next solver if it exists
-        leftNext = None
-        if self.solverNum != self.numSolvers-1:
-            leftNext = self.mui.fetchLeftNext(time)
-        else:
-            leftNext = np.zeros((self.nodes))
-    
-        # set T[-1, :] (left boundary ) according to forward difference approximation
-        for y in range(0, self.nodes):
-            xComponent = fracX * (self.alpha*(t[-2][y]-t[-1][y] + self.alphaAvgNext*(leftNext[y]-t[-1][y])))
-
-            if  0 < y < self.nodes-1:
-                yComponent = fracY * (t[-1][y+1] - 2*t[-1][y] + t[-1][y-1])
-            # otherwise use a 'ghost flux' of 0
-            elif y == 0:
-                yComponent = fracY * (t[-1][y+1] - t[-1][y])
-            elif y == self.nodes-1:
-                yComponent = fracY * (t[-1][y-1] - t[-1][y])      
-            
-            self.T[-1][y] = t[-1][y] + xComponent +  self.alpha*yComponent
-        
-        # push the values at the rightBoundary
-        if self.solverNum != self.numSolvers-1:
-            self.mui.pushRight(self.T[-1, :] ,time)
-            
-        if animate:
-            self.pcm.set_array(self.T.T)
-            self.axis.set_title("Temperature at time t: {:.3f}s".format(time))
-            plt.pause(0.005)
-
     ## using numpy with shifts is roughly 150x faster for n=50
-    ## use the above function to understand whats going on
-    def calculateHeatEquationWithNumpy(self, time, animate = False):
+
+    def calculateHeatEquation(self, time, animate = False):
         ## Idea: Do everything at once i.e xComponent =(dt/dx^2) Txplus1 + -2T + Txminus1
 
         # push/fetch boundaries to/from adjacent solvers
@@ -199,17 +114,21 @@ class Heat2d:
         else:
             leftNext = self.zerosX
 
+        
         Txminus1 = None
         Txplus1 = None
         Tx = self.T.copy()
+        
 
         # set up shifted versions of T (xComponent)
         Txplus1 = np.concatenate((self.T[1:], leftNext))
         Txminus1 = np.concatenate((rightPrev, self.T[:-1]))
 
         # for edge solvers one of these is redundant, could be made more efficient
-        Tx[-1, : ] *= self.alphaAvgNext
-        Tx[0, : ] *= self.alphaAvgPrev
+        if self.solverNum == 0:
+            Tx[-1, : ] *= self.alphaAvgNext
+        else:
+            Tx[0, : ] *= self.alphaAvgPrev
 
 
     
